@@ -1,0 +1,324 @@
+---
+title: "Project 1"
+author: "Oluwabukola Emi-Johnson"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r}
+HousePrices <- read.csv("C:/Users/Oluwabukolah Phoenix/Desktop/Classes/STA 663-363 - Statistical Learning with R - Dazelle Nicole/To do/HousePrices.csv")
+```
+
+```{r include=FALSE}
+# Teach R the compute RMSE Function
+compute_RMSE <- function(truth, predictions){
+  
+  # Part 1
+  part1 <- truth - predictions
+  
+  #Part 2
+  part2 <- part1^2
+  
+  #Part 3: RSS 
+  part3 <- sum(part2)
+  
+  #Part4: MSE
+  part4 <- 1/length(predictions)*part3
+  
+  # Part 5:RMSE
+  sqrt(part4)
+}
+
+suppressMessages(library(StatMatch))
+
+# Teach R the KNN with Gower Distance Function
+knnGower <- function(trainX, testX, trainY, k){
+  # Find the Gower Distance
+  gowerHold <- StatMatch::gower.dist( testX, trainX)
+  # For each row, find the k smallest
+  neighbors <- apply(gowerHold, 1, function(x) which(x %in% sort(x)[1:k]))
+  
+  if(class(neighbors)[1]=="integer"){
+    preds <- trainY[neighbors]
+  }
+  
+  # Take the mean to get the prediction
+  if(class(neighbors)[1]=="matrix"){
+    preds <- apply(neighbors, 2,function(x) mean(trainY[x]))
+  }
+  
+  if(class(neighbors)[1]=="list"){
+    preds <- lapply(neighbors, function(x) mean(trainY[x]))
+  }
+  # Return the predictions
+  unlist(preds)
+}
+```
+
+```{r}
+# Create a new data frame called predPrices with the following 5 columns
+predPrices <- data.frame("SalePrice" = HousePrices$SalePrice, "LinearModel" = rep(NA, 583), "tenFoldCV" = rep(NA, 583), "LOOCV" = rep(NA, 583), "KNN" = rep(NA, 583))
+```
+
+```{r}
+# Set Seed for reproducibility
+set.seed(6631)
+```
+
+
+## Abstract
+
+In this report, we compared two techniques, Linear Regression and K-Nearest Neighbors (KNN), for predicting house prices. Our analysis revealed that KNN outperformed Linear Regression, with a higher prediction accuracy (RMSE of 47.96). This means our KNN model, on average, is off by about $47,962.86 when predicting house prices. Considering our goal of accurate predictions, we recommend using KNN. We also note that it is crucial to fine-tune the model for the best results as our data evolves.
+
+
+
+## Section 1: Linear Regression
+
+To predict house prices, the analysis started with Linear Regression, utilizing all features and observations (rows) from the dataset to train the model and obtain estimates for the coefficient of each feature. The resulting estimates, as presented in the table below, provide a preliminary insight into the influence of each feature on the response variable: House prices. This analysis represents a critical step towards achieving the project's objectives.
+
+```{r}
+# Fit a linear regression model using all predictors except SalePrice
+LinearModel <- lm(SalePrice ~ ., data = HousePrices)
+
+# Make predictions using the linear regression model and store the values in the corresponding column
+# in the dataframe created.
+predPrices[,'LinearModel'] <- predict(LinearModel)
+
+# Get the coefficients of the linear regression model and display them in a nicely formatted table
+LinearModelCoeff <- LinearModel$coefficients
+knitr::kable(LinearModelCoeff, caption = "Table 1: Coefficients of Linear Regression Model", 
+             col.names = "Coefficients", align = "c")
+```
+
+
+Analysis of Table 1 above reveals that the most influential features on house prices include KitchenAbvGR, OverallQual, BsmtFullBath, BsmtHalfBath, and TotRmsAbvGr.
+
+To assess the predictive accuracy of our regression model, two cross-validation (CV) techniques were employed, utilizing all features within our dataset. The chosen CV techniques for this analysis are 10-fold Cross-Validation (10-fold CV) and Leave-One-Out Cross-Validation (LOOCV).
+
+In 10-fold CV, the dataset is divided into 10 equally sized folds, although the size of the dataset could also influence this equal division, with the model being trained and evaluated 10 times. Each iteration employs a different fold as the test set and the remaining 9 folds as the training set. This ensures every row in the dataset is used for both training and testing. On the other hand, LOOCV adopts a granular approach, using each data point as the test set once, while the rest of the data forms the training set. However, LOOCV can be computationally intensive for large datasets, as it requires fitting the model as many times as there are rows in the dataset, making it better suited for smaller datasets.
+
+
+```{r}
+# Create and assign fold numbers (1 to 10) to each row in the dataset
+passes <- rep(1:10, 59)
+folds <- sample(passes, 583, replace = FALSE)
+
+# Measure the execution time for the following loop
+tenFoldCVTime <- as.list(system.time({
+  
+  # Iterate over 10 folds for cross-validation
+  for (f in 1:10){
+    
+    # Get the rows assigned to the current fold
+    infolds <- which(folds==f)
+    
+    # Separate data into training and test sets for the current fold
+    testData <- HousePrices[infolds,]
+    trainData <- HousePrices[-infolds,]
+    
+    # Fit a linear regression model using the training data
+    tenFoldCV <- lm(SalePrice ~ ., data = trainData)
+    
+    # Make predictions using the model and store the values in the corresponding column in predPrices
+    predPrices[infolds,"tenFoldCV"] <- predict(tenFoldCV, newdata = testData)
+  }
+}))
+
+# Calculate RMSE for using the predictions obtained from using 10-fold CV
+tenFoldRMSE <- compute_RMSE(HousePrices$SalePrice, predPrices$tenFoldCV)
+```
+
+
+```{r}
+# Measure the execution time for the following loop
+LOOCVTime <- as.list(system.time({
+  
+  # Iterate over each row in the dataset for LOOCV
+  for (i in 1:583){
+    
+    # Create test data with a single row and training data with the remaining rows 
+    testData <- HousePrices[i,]
+    trainData <- HousePrices[-i,]
+    
+    # Fit a linear regression model using the training data
+    LOOCVModel <- lm(SalePrice ~ ., data = trainData)
+    
+    # Make predictions on the test data and store it in the corresponding column in predPrices
+    predPrices[i,"LOOCV"] <- predict(LOOCVModel, newdata = testData)
+  }
+}))
+
+# Calculate RMSE for using the predictions obtained from using LOOCV
+LOOCV_RMSE <- compute_RMSE(HousePrices$SalePrice, predPrices$LOOCV)
+
+```
+
+
+```{r}
+# create a dataframe containing the test RMSE for both CV techniques
+
+tenFoldvalues <- c(tenFoldRMSE, tenFoldCVTime$elapsed)
+LOOCVvalues <- c(LOOCV_RMSE, LOOCVTime$elapsed)
+MetValue <- c('test RMSE', 'Time (secs)')
+
+# Create the data frame with different rows for the values inside the brackets
+CVvalues <- data.frame("value" = MetValue, "10 Fold CV" = tenFoldvalues, "LOOCV" = LOOCVvalues)
+
+# display the coefficients of the models in a nicely formatted table
+knitr::kable(CVvalues, caption = "Table 2: Test RMSE and Time taken for 10-fold CV and LOOCV", col.names = c("", "10-fold CV", "LOOCV"), align = c("c", "c", "c"))
+
+```
+
+
+Referencing Table 2 above, the computational time for our 10-fold CV technique was approximately 0.05 seconds, while the LOOCV technique took about 2.42 seconds. Utilizing 10-fold CV saved us approximately 2.37 seconds in computation time. However, it is worth noting that despite the time difference, LOOCV yielded a better test Root Mean Square Error (RMSE) of 55.83 compared to 56.92 for 10-fold CV.
+
+The test RMSE is an important metric for assessing our model's predictive accuracy. In the context of our analysis, LOOCV indicates that, on average, our predicted house prices deviate from the actual prices by approximately $55,831.59. This insight provides valuable feedback on the precision of our predictions.
+
+
+```{r}
+# Create a scatter plot using with True House prices on the Y-axis and predicted house prices on the X-axis
+ggplot(predPrices, aes(x = LOOCV, y = SalePrice)) +
+  geom_point() +
+  
+  # Add labels for X and Y axes
+  xlab("Predicted House Price") +
+  ylab("True House Price") +
+  
+  # Add a plot title
+  ggtitle("Figure 1: Visualization of True Sale Price vs. Predicted Sale Prices for LOOCV") +
+  
+  geom_abline(intercept = 0, slope = 1, color = "black") # Add 0-1 line
+  
+```
+
+
+Figure 1 above shows us..........
+
+
+
+
+## Section 2: KNN
+
+In our pursuit of predicting house prices, we explored an alternative approach: the K-Nearest Neighbor (KNN) algorithm. KNN predicts outcomes based on similarity, identifying the 'k' nearest data points in the training set and averaging their response variable values to make predictions.
+
+The choice of 'k' in KNN significantly impacts prediction accuracy and requires careful consideration. To determine the optimal 'k,' we experimented with values ranging from 1 to 30. Employing 10-fold Cross-Validation (10-fold CV) for evaluation, we calculated the test RMSE for each 'k'. Figure 2 illustrates the test RMSE values corresponding to different 'k' values. Analyzing the plot, we identified a trend and also found that the lowest test RMSE occurs at 'k = 10.' This insight guides our selection of the optimal 'k' for our predictive model.
+
+
+```{r}
+# Create a storage space to hold the value of K and the test RMSE for that choice of k
+RMSEvalues <- data.frame('k' = 1:30, 'test_RMSE' = rep(NA, 30))
+
+# Iterate over possible k-values
+for( k in 1:30){
+
+  # Create a storage space to hold the predictions from 10-fold CV
+  knnPred <- data.frame('Pred_prices' = rep(NA, 583))
+
+  # Loop over the 10-folds
+  for( f in 1:10 ){
+    
+    # Get the rows assigned to the current fold
+    infolds <- which(folds==f)
+    
+    # Separate data into training and test sets for the current fold
+    testData <- HousePrices[infolds,]
+    trainData <- HousePrices[-infolds,]
+    
+    # Make predictions using KNN and store the values in the corresponding column and rows in predPrices
+    knnPred[infolds,] <- knnGower(trainData[,-27], testData[,-27], trainData[,27], k)
+ 
+  }
+  
+  # Calculate RMSE for predictions obtained with each value of k and store it in the RMSEvalues data frame
+  RMSEvalues[k, 'test_RMSE']  <-  compute_RMSE(HousePrices$SalePrice, knnPred$Pred_prices)
+}
+
+# Create a scatter plot using with values of k on the X-axis and corresponding test RMSE values on the Y-axis
+ggplot(RMSEvalues, aes(k, test_RMSE)) +
+  geom_point() +
+  
+  # Add labels for X and Y axes
+  xlab("k") +
+  ylab("Test RMSE values") +
+  
+  # Add a plot title
+  ggtitle("Figure 2: Visualization changes in RMSE with changes in K")
+```
+
+
+After obtaining the optimal 'k' value for our K-Nearest Neighbor (KNN) algorithm, we conducted another round of testing using both cross-validation (CV) techniques in this analysis. The test RMSE values obtained were 10-fold CV (47.96) and LOOCV (48.52). Comparing the two, 10-fold CV produced a lower test RMSE, making it the preferred choice. Hence, utilizing 10-Nearest Neighbors (10NN), our predicted house prices deviate from the true prices by an average of $47,962.86. This insight showcases the accuracy level of our predictions.
+
+
+```{r}
+# Iterate over each row in the dataset for LOOCV
+for (i in 1:583){
+  # Create test data with a single row and training data with the remaining rows 
+  testData <- HousePrices[i,]
+  trainData <- HousePrices[-i,]
+    
+  # Fit a linear regression model using the training data
+  LOOCVModell <- lm(SalePrice ~ ., data = trainData)
+    
+    # Make predictions on the test data and store it in the corresponding column in predPrices
+  predPrices[i,"LOOCV"] <- knnGower(trainData[,-27], testData[,-27], trainData[,27], 10)
+}
+
+# Calculate RMSE for using the predictions obtained from using LOOCV
+LOOCV_RMSEE <- compute_RMSE(HousePrices$SalePrice, predPrices$LOOCV)
+```
+
+
+```{r}
+ # Loop over the 10-folds
+for(f in 1:10 ){
+  
+  # Get the rows assigned to the current fold
+  infolds <- which(folds==f)
+  
+  # Separate data into training and test sets for the current fold
+  testData <- HousePrices[infolds,]
+  trainData <- HousePrices[-infolds,]
+  
+  # Make predictions using KNN and store the values in the corresponding column and rows in predPrices
+  predPrices[infolds,"KNN"] <- knnGower(trainData[,-27], testData[,-27], trainData[,27], 10)
+}
+
+# Calculate RMSE for using the predictions obtained from using KNN
+KNNRMSE <- compute_RMSE(HousePrices$SalePrice, predPrices$KNN)
+
+# Create a scatter plot using with True House prices on the Y-axis and predicted house prices on the X-axis
+ggplot(predPrices, aes(x = KNN, y = SalePrice)) +
+  geom_point() +
+  
+  # Add labels for X and Y axes
+  xlab("Predicted Sale Price") +
+  ylab("True Sale Price") +
+  
+  # Add a plot title
+  ggtitle("Figure 3: Visualization of True Sale Price vs. Predicted Sale Prices for KNN") +
+  
+  geom_abline(intercept = 0, slope = 1, color = "black") # Add 0-1 line
+```
+
+
+
+Figure 3 above shows us..........
+
+
+
+
+## Section 3: Conclusion and Recommendation.
+
+
+After thorough analysis, it is evident that K-Nearest Neighbors (KNN) outperforms Linear Regression, achieving the lowest test RMSE of 47.96. This implies that, on average, our predicted house prices deviate from the true values by approximately $47,962.86. The significantly lower RMSE of KNN signifies higher predictive accuracy compared to Linear Regression, making it the superior choice for our analysis.
+
+When selecting a model, it is crucial to consider the data's structure, features, and the analysis goals. Our primary objective is to make precise predictions. Given KNN's superior predictive accuracy over Linear Regression, it clearly aligns with our objective. Therefore, I strongly recommend utilizing the KNN approach for predicting house prices in this context.
+
+Furthermore, it is important to note that KNN's effectiveness depends on the choice of 'k'. Fine-tuning this parameter might further enhance the model's accuracy. Also, regular validation and adjustment of the model, as the dataset evolves or expands, will ensure the continued reliability of our predictions.
