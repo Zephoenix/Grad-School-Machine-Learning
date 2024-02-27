@@ -1,0 +1,395 @@
+---
+title: "Final Project Code Appendix"
+author: "Oluwabukola Emi-Johnson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# load libraries needed for analysis and visualizations
+library(readr)
+library(ggplot2)
+library(glmnet)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(caret)
+library(fmsb)
+library(scales)
+library(gridExtra)
+```
+
+
+```{r}
+# Teach R the compute RMSE Function
+compute_RMSE <- function(truth, predictions){
+  
+  # Part 1
+  part1 <- truth - predictions
+  
+  #Part 2
+  part2 <- part1^2
+  
+  #Part 3: RSS 
+  part3 <- sum(part2)
+  
+  #Part4: MSE
+  part4 <- 1/length(predictions)*part3
+  
+  # Part 5:RMSE
+  sqrt(part4)
+}
+```
+
+
+## Data cleaning
+```{r warning=FALSE}
+# Load dataset and select relevant columns
+football_data <- read_csv("C:/Users/Oluwabukolah Phoenix/Downloads/Compressed/fifa_2022_datasets/players_22.csv")
+need_columns <- c("overall", "value_eur", "wage_eur", "age", "player_positions", "height_cm", "weight_kg", "preferred_foot", "weak_foot", "skill_moves", "release_clause_eur", "pace", "shooting", "passing", "dribbling", "defending", "physic", "attacking_crossing", "attacking_finishing", "attacking_heading_accuracy", "attacking_short_passing", "attacking_volleys", "skill_dribbling", "skill_curve", "skill_fk_accuracy", "skill_long_passing", "skill_ball_control", "movement_acceleration", "movement_sprint_speed", "movement_agility", "movement_reactions", "movement_balance", "power_shot_power", "power_jumping", "power_stamina", "power_strength", "power_long_shots", "mentality_aggression", "mentality_interceptions", "mentality_positioning", "mentality_vision", "mentality_penalties", "mentality_composure", "defending_marking_awareness", "defending_standing_tackle", "defending_sliding_tackle")
+short_football_data <- football_data[, need_columns]
+
+# Remove Goalkeepers and missing values
+gk_rows <- which(short_football_data$player_positions == "GK")
+short_football_data <- short_football_data[-gk_rows,]
+short_football_data <- na.omit(short_football_data)
+
+# Remove unwanted column and convert categorical variable
+short_football_data <- short_football_data[,-5]
+short_football_data$preferred_foot <- as.factor(short_football_data$preferred_foot)
+
+# Rescale selected columns
+resize_columns <- c("value_eur", "wage_eur", "release_clause_eur")
+short_football_data[,resize_columns] <- short_football_data[,resize_columns]/1000
+
+```
+
+
+## EDA
+
+## overall rating plot
+
+```{r,warning=FALSE}
+# Plot histogram
+ggplot(data = short_football_data, aes(x = overall)) +
+  geom_histogram(binwidth = 5, fill = "grey", color = "black") +
+  
+  # Cut x-axis at 1000
+  scale_x_continuous(limits = c(40, 100), breaks = seq(0, 100, by = 5)) +
+  
+  # Add labels and title
+  labs(x = "Player Overall Rating", y = "Frequency", title = "Figure 2.1: Distribution of FIFA 22 Overall Player Ratings")
+```
+
+
+
+## Preferred foot plot
+
+```{r}
+# Create a pie chart and density plot for Preferred Foot distribution
+feet <- c("Left", "Right")
+foot_percentages <- c(25, 75)
+
+# Create Density plot
+plot2 <- ggplot(data = short_football_data, aes(x = overall, fill = preferred_foot)) +
+  geom_density(alpha = 0.5) +
+  labs(title = 'Figure 2: Distribution of Overall Rating by Preferred Foot') +
+  scale_fill_manual(values = c("lightblue", "pink")) +
+  theme_minimal()
+
+# Create Pie chart
+plot1 <- pie(table(short_football_data$preferred_foot), 
+             labels = sprintf("%1.f%%", foot_percentages), 
+             col = c("lightblue", "pink"), 
+             main = "Figure 2.2: Proportion of Players Preferred Foot") 
+
+# Insert Legend
+legend("right", legend = feet, fill = c("lightblue", "pink"))
+
+# Arrange plots in a grid
+gridExtra::grid.arrange(plot1, plot2, ncol = 2)
+
+
+```
+
+
+## Age plot
+
+```{r warning=FALSE}
+# Plot histogram
+ggplot(data = short_football_data, aes(x = age)) +
+  geom_histogram(binwidth = 3, fill = "grey", color = "black") +
+  
+  # Cut x-axis at 40
+  scale_x_continuous(limits = c(15, 40), breaks = seq(15, 40, by = 3)) +
+  
+  # Add labels and title
+  labs(x = "Age", y = "Frequency", title = "Figure 2.3: Distibution of Player Age")
+```
+
+
+## Wage, Value and Overall Rating plot
+
+```{r}
+# Create a scatter plot to compare Wage, Value, and Overall Rating
+ggplot(short_football_data, aes(wage_eur, value_eur, size = overall, color = overall)) +
+  geom_point() +
+  scale_color_gradient(low = "red", high = "darkred", guide = "legend") +
+  scale_size_continuous(guide = "legend") +
+  
+  # Add labels and title
+  labs(title = 'Figure 2.4: Comparison of Wage, Value and Overall Rating', x = "Wage (€'000)", y = "Value (€'000)")
+```
+
+
+## Age and Overall Rating plot
+
+```{r}
+# Create a jitter plot to compare Age and Overall Rating
+ggplot(short_football_data, aes(age, overall)) +
+  geom_jitter() +
+  
+  # Add labels and title
+  labs(title = 'Figure 2.5: Comparison of Age and Overall Rating', x = "Age", y = "Overall Player Ratings")
+```
+
+
+## Key Player Metrics plot
+
+```{r}
+# Select required variables
+boxplot_variables <- c("pace", "shooting", "passing", "dribbling", "defending", "physic")
+
+# Subset data to include only the selected variables
+boxplot_data <-short_football_data[, boxplot_variables]
+
+# Plot boxplots for the selected variables
+boxplot(boxplot_data, col = c("gold", "lightblue", "grey", "purple", "orange", "pink"),
+        main = "Figure 7: Distibution of Key Player Metrics", xlab = "Metrics", ylab = "Values")
+```
+
+
+## Selected Players plot
+
+```{r}
+# Calculate column max, min, and median
+radar_data <- as.data.frame(sapply(boxplot_data, function(x) c(max(x), min(x), median(x))))
+
+# Set specific values for column_min and column_max
+radar_data[4,] <- head(boxplot_data, 1)
+radar_data[5,] <- tail(boxplot_data, 1)
+radar_data[1,] <- 99
+radar_data[2,] <- 10
+
+# Define a function to create a beautiful radar chart
+create_beautiful_radarchart <- function(data, color = "#00AFBB", 
+                                        vlabels = colnames(data), vlcex = 0.7,
+                                        caxislabels = NULL, title = NULL, ...) {
+  radarchart(
+    data, axistype = 1,
+    # Customize the polygon
+    pcol = color, pfcol = scales::alpha(color, 0.5), plwd = 2, plty = 1,
+    # Customize the grid
+    cglcol = "grey", cglty = 1, cglwd = 0.8,
+    # Customize the axis
+    axislabcol = "grey", 
+    # Variable labels
+    vlcex = vlcex, vlabels = vlabels,
+    caxislabels = caxislabels, title = title, ...
+  )
+}
+
+# Set the plot margins
+op <- par(mar = c(1, 2, 2, 2))
+
+# Create the radar chart using the created function
+create_beautiful_radarchart(
+  data = radar_data, caxislabels = c(10, 25, 50, 75, 100),
+  color = c("#00AFBB", "#E7B800", "#FC4E07"),
+  title = "Figure 2.7: Comparison of Selected Players"
+)
+
+# Add a vertical legend
+legend(
+  x = "bottomleft", legend = c("Median Rated Player", "Highest Rated Player", "Lowest Rated Player"), horiz = FALSE,
+  bty = "n", pch = 20 , col = c("#00AFBB", "#E7B800", "#FC4E07"),
+  text.col = "black", cex = 1, pt.cex = 1.5
+)
+
+# Reset the plot margins
+par(op)
+
+```
+
+
+
+## KNN
+
+```{r}
+# Create a data frame for KNN analysis
+knn_data <- data.frame(short_football_data)
+
+# Convert preferred_foot to binary (Left: 0, Right: 1)
+knn_data$preferred_foot <- ifelse(knn_data$preferred_foot == "Left", 0, 1)
+
+# Define values of k for KNN
+k_vals <- c(3, 5, 10, 25, 75, 126)
+
+# Create a data frame to store RMSE values for each k
+knn_rmse_data <- data.frame("k" = rep(NA, 6), "rmse" = rep(NA, 6))
+
+# Create a sequence of tickets for 10-fold cross-validation
+tickets <- rep(1:10, 1602)
+
+# Set seed for reproducibility
+set.seed(363663)
+
+# Sample folds for cross-validation
+folds <- sample(tickets, 16020)
+
+# Create a data frame to store predictions
+preds <- data.frame("Overall" = rep(NA, 16020))
+
+# Perform KNN with different values of k
+for (i in 1:length(k_vals)) {
+  for (f in 1:10) {
+    # Identify the test and train sets based on folds
+    infold <- which(folds == f)
+    traindata <- knn_data[-infold,]
+    testdata <- knn_data[infold,]
+    
+    # Fit KNN model and make predictions
+    hold <- knnreg(traindata[,-1], traindata[,1], k = k_vals[i])
+    preds[infold,] <- predict(hold, newdata = testdata[,-1])
+  }
+  
+  # Calculate and store RMSE for each k
+  knn_rmse_data[i, 'rmse'] <- compute_RMSE(short_football_data$overall, preds$Overall)
+  knn_rmse_data[i, 'k'] <- k_vals[i]
+}
+
+
+# Create a scatter plot using with values of k on the X-axis and corresponding test RMSE values on the Y-axis
+ggplot(knn_rmse_data, aes(k, rmse)) +
+  geom_point() +
+  
+  # Add labels for X and Y axes
+  xlab("k") +
+  ylab("Test RMSE values") +
+  
+  # Add a plot title
+  ggtitle("Figure 3.1: Visualization changes in RMSE with changes in K")
+
+```
+
+
+## Elastic Net Regression
+
+```{r}
+# Define a sequence of lambda values
+lambda_vals <- seq(0, 100, 0.5)
+
+# Define a sequence of alpha values
+alpha_vals <- seq(0, 1, 0.02)
+
+# Create a model matrix for the Elastic Net regression
+XD <- model.matrix(overall ~ ., data = short_football_data)
+
+# create a dataframe frame to store the values of alpha, lambda and their corresponding test RMSE
+tuning_pairs <- data.frame('alpha' = rep(NA, 51), 'lambda' = rep(NA, 51), 'test_RMSE' = rep(NA, 51))
+
+# iterate through different alpha values and perform Elastic Net cross-validation
+for (i in 1:length(alpha_vals)){
+  set.seed(663)
+  elast_mod <- cv.glmnet(XD[,-1], short_football_data$overall, alpha = alpha_vals[i], lambda = lambda_vals)
+  
+  # store the the minimum RMSE, and the lambda and alpha value corresponding to the minimum MSE in the appropriate column
+  tuning_pairs[i,'lambda'] <- elast_mod$lambda.min
+  tuning_pairs[i,'test_RMSE'] <- min(sqrt(elast_mod$cvm))
+  tuning_pairs[i,'alpha'] <- alpha_vals[i]
+}
+
+# fit an Elastic Net regression model using the alpha and lambda values with the minimum test_RMSE
+elast_model <- glmnet(XD[,-1], short_football_data$overall, alpha = tuning_pairs[which.min(tuning_pairs$test_RMSE), 'alpha'], lambda = tuning_pairs[which.min(tuning_pairs$test_RMSE), 'lambda'], standardize = TRUE)
+
+# find the test RMSE
+min(tuning_pairs$test_RMSE)
+```
+
+
+## True Overall Ratings vs Predicted Overall Ratings  plot
+
+```{r}
+# Obtain fitted values from the Elastic Net model
+fitted_values <- predict(elast_model, XD[,-1])
+
+# Create a dataframe with True and Predicted values
+scatter_data <- data.frame('True' = short_football_data$overall, 'Predicted' = fitted_values)
+scatter_data$Predicted <- scatter_data$s0
+scatter_data <- scatter_data[,-2]
+
+# Create a plot of Predicted vs True Overall Ratings
+ggplot(scatter_data, aes(x = Predicted, y = True)) +
+  geom_jitter() +
+  labs(title = "Figure 4.1: Plot of Predicted vs True Overall Ratings",
+       x = "Predicted Values",
+       y = "True Values") +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  theme_minimal()
+```
+
+
+## Regression Tree
+
+```{r}
+# Build a Regression Tree model using the rpart package
+overall_ratings_tree <- rpart(overall ~ ., method = "anova", cp = 0.01, data = short_football_data)
+
+# Create a fancy plot for the Regression Tree
+fancyRpartPlot(overall_ratings_tree, sub = "Figure 5.1: Regression Tree")
+```
+
+
+```{r}
+# Create an empty dataframe for storing predictions
+preds_Reg_Tree <- data.frame("Overall" = rep(NA, 16020))
+
+# Perform 10-fold cross-validation for the Regression Tree model
+for (f in 1:10) {
+  # Identify the indices for the current fold
+  infold <- which(folds == f)
+  
+  # Split the data into training and testing sets
+  traindataRegTree <- short_football_data[-infold,]
+  testdataRegTree <- short_football_data[infold,]
+  
+  # Build a Regression Tree model using training data
+  overall_ratings_tree_CV <- rpart(overall ~ ., method = "anova", cp = 0.01, data = traindataRegTree)
+  
+  # Make predictions on the testing set
+  preds_Reg_Tree[infold,] <- predict(overall_ratings_tree_CV, newdata = testdataRegTree[,-1])
+}
+
+# Compute the Root Mean Squared Error (RMSE) for the Regression Tree model
+compute_RMSE(short_football_data$overall, preds_Reg_Tree$Overall)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
